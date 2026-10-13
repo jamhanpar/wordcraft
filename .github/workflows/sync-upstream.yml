@@ -1,0 +1,20 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync fork with storytold upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          repo_name="${GITHUB_REPOSITORY#*/}"
+          gh repo sync "$GITHUB_REPOSITORY" --source "storytold/$repo_name"
