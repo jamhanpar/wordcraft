@@ -478,8 +478,25 @@ fn widow_control_moves_a_three_line_paragraph_whole() {
     // A three-line paragraph with room for two at the bottom of a page can't leave a widow (two
     // and one) nor an orphan (one and two): Word moves it whole. A four-line one splits two and
     // two. Sweep the paragraph down the page a point at a time and check every split.
+    let lines_for_words = |words: usize| {
+        let d = Document::from_text(&format!("{}\nAfter.", "word ".repeat(words)));
+        let l = lay(&d);
+        l.pages
+            .iter()
+            .filter_map(|p| {
+                p.items.iter().find_map(|it| match it {
+                    Placed::Lines { story: StoryRef::Body, path, para, .. } if *path == Path::top(0) => Some(para.lines.len()),
+                    _ => None,
+                })
+            })
+            .next()
+            .unwrap()
+    };
+    let words_for = |want| (20usize..120).find(|&words| lines_for_words(words) == want).unwrap();
+    let words_three = words_for(3);
+    let words_four = words_for(4);
     let mut split4 = false;
-    for (want, words) in [(3usize, 45usize), (4, 55)] {
+    for (want, words) in [(3usize, words_three), (4, words_four)] {
         for (fill, shift) in (30usize..60).flat_map(|f| (0..15).step_by(2).map(move |s| (f, s))) {
             let filler = "Filler line.\n".repeat(fill);
             let mut d = Document::from_text(&format!("{filler}{}\nAfter.", "word ".repeat(words)));
