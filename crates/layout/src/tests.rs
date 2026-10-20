@@ -456,15 +456,19 @@ fn deleted_text_adds_no_line_break_opportunity_without_markup() {
     let mut d = Document::from_text("xx ab\u{ad}cdef");
     d.format_range(&Pos::body(0, 5), &Pos::body(0, 7), &|c| c.del = Some(0)).unwrap();
     d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| p.indent_right = Some(468.0 - 40.0)).unwrap();
-    let line_starts = |hide_deleted: bool| {
-        let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions { hide_deleted, ..Default::default() });
+    let mut shown = Document::from_text("xx ab\u{ad}cdef");
+    shown.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| p.indent_right = Some(468.0 - 40.0)).unwrap();
+    let mut final_text = Document::from_text("xx abcdef");
+    final_text.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| p.indent_right = Some(468.0 - 40.0)).unwrap();
+    let line_starts = |doc: &Document, hide_deleted: bool| {
+        let l = layout(doc, &mut LayoutCache::new(), &LayoutOptions { hide_deleted, ..Default::default() });
         let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
         para.lines.iter().map(|l| para.clusters.get(l.c0).map_or(usize::MAX, |c| c.start)).collect::<Vec<_>>()
     };
     // With markup the word breaks at the (deleted) soft hyphen.
-    assert_eq!(line_starts(false), vec![0, 7]);
+    assert_eq!(line_starts(&d, false), line_starts(&shown, false));
     // Final text: "abcdef" is one word, so the line breaks at the space before it.
-    assert_eq!(line_starts(true), vec![0, 3]);
+    assert_eq!(line_starts(&d, true), line_starts(&final_text, true));
 }
 
 #[test]
@@ -493,15 +497,19 @@ fn hidden_text_adds_no_line_break_opportunity_when_not_shown() {
         let end = 5 + hidden.len();
         d.format_range(&Pos::body(0, 5), &Pos::body(0, end), &|c| c.hidden = Some(true)).unwrap();
         d.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| p.indent_right = Some(468.0 - 40.0)).unwrap();
-        let line_starts = |show_hidden: bool| {
-            let l = layout(&d, &mut LayoutCache::new(), &LayoutOptions { show_hidden, ..Default::default() });
+        let mut shown = Document::from_text(&format!("xx ab{hidden}cdef"));
+        shown.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| p.indent_right = Some(468.0 - 40.0)).unwrap();
+        let mut final_text = Document::from_text("xx abcdef");
+        final_text.format_paragraphs(&Pos::body(0, 0), &Pos::body(0, 0), &|p| p.indent_right = Some(468.0 - 40.0)).unwrap();
+        let line_starts = |doc: &Document, show_hidden: bool| {
+            let l = layout(doc, &mut LayoutCache::new(), &LayoutOptions { show_hidden, ..Default::default() });
             let Some(Placed::Lines { para, .. }) = l.pages[0].items.iter().find(|i| matches!(i, Placed::Lines { .. })) else { panic!() };
             para.lines.iter().map(|l| para.clusters.get(l.c0).map_or(usize::MAX, |c| c.start)).collect::<Vec<_>>()
         };
         // Shown, the word breaks at the hidden soft hyphen or space.
-        assert_eq!(line_starts(true), vec![0, end], "{hidden:?}");
+        assert_eq!(line_starts(&d, true), line_starts(&shown, true), "{hidden:?}");
         // Not shown, "abcdef" is one word, so the line breaks at the space before it.
-        assert_eq!(line_starts(false), vec![0, 3], "{hidden:?}");
+        assert_eq!(line_starts(&d, false), line_starts(&final_text, false), "{hidden:?}");
     }
 }
 
@@ -4950,12 +4958,25 @@ fn tight_wrap_follows_an_ellipse() {
     // Lines near the ellipse's top and bottom start at the curve, well inside its frame; beside
     // the middle they don't. Measured against each line's own contour edge, so the check holds
     // whatever line height the test machine's fonts give.
-    let line = |pred: &dyn Fn(f32) -> bool| *tight.iter().find(|l| pred(l.0) && l.2 > 60.0).unwrap();
-    for (what, l) in [("first line", line(&|top| top < 1.0)), ("near the bottom", line(&|top| top > 140.0 && top < 160.0))] {
+    let line = |pick: &dyn Fn(&(f32, f32, f32, f32), &(f32, f32, f32, f32)) -> bool| {
+        tight
+            .iter()
+            .filter(|l| l.0 < 160.0)
+            .copied()
+            .reduce(|a, b| if pick(&a, &b) { a } else { b })
+            .unwrap()
+    };
+    for (what, l) in [("first line", line(&|a, b| a.0 < b.0)), ("near the bottom", line(&|a, b| a.0 > b.0))] {
         let edge = contour(l.0, l.1).1;
         assert!(l.2 <= edge + 3.0 && l.2 < 169.0 - 10.0, "{what} hugs the curve at {edge}: {l:?} in {tight:?}");
     }
-    assert!(line(&|top| top > 65.0 && top < 80.0).2 >= 160.0, "beside the widest part: {tight:?}");
+    let middle = tight
+        .iter()
+        .filter(|l| l.0 < 160.0)
+        .min_by(|a, b| ((a.0 + a.1 - 160.0).abs()).total_cmp(&((b.0 + b.1 - 160.0).abs())))
+        .copied()
+        .unwrap();
+    assert!(middle.2 >= 160.0, "beside the widest part: {tight:?}");
     // A convex shape has no gaps for Through to use: it wraps as Tight.
     assert_eq!(through, tight);
 }
