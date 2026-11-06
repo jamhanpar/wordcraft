@@ -14,7 +14,7 @@ jobs:
     steps:
       - name: Sync fork with storytold upstream
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
           repo_name="${GITHUB_REPOSITORY#*/}"
           gh repo sync "$GITHUB_REPOSITORY" --source "storytold/$repo_name"
